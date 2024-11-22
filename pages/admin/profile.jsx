@@ -99,7 +99,7 @@ const Profile = () => {
         className="btn-primary !w-12 !h-12 !p-0 absolute bottom-14 right-10 text-4xl"
         onClick={() => setIsProductModal(true)}
       >
-        +
+        Yeni Ürün Ekle
       </button>
     </div>
   );
