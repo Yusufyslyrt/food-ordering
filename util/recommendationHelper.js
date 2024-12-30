@@ -1,168 +1,113 @@
-// Jaccard benzerlik katsayısını hesaplayan fonksiyon
-const calculateJaccardSimilarity = (ingredients1, ingredients2) => {
-  const set1 = new Set(ingredients1);
-  const set2 = new Set(ingredients2);
+import * as tf from '@tensorflow/tfjs';
 
-  const intersection = new Set([...set1].filter((x) => set2.has(x)));
-  const union = new Set([...set1, ...set2]);
-
-  return intersection.size / union.size;
+// Özellik vektörü oluşturma
+const createFeatureVector = (ingredients, allIngredients) => {
+  return allIngredients.map(ing => ingredients.includes(ing) ? 1 : 0);
 };
 
-// Büyükten küçüğe sıralı ürün önerisi yapan fonksiyon
-export const getRecommendations = (
-  cartProducts, // Sepetteki ürünler
-  allProducts,  // Tüm ürünler
-  threshold = 0.1 // Minimum benzerlik skoru
-) => {
-  // Sepetteki tüm ürünlerin malzemelerini birleştir
-  const cartIngredients = [
-    ...new Set(cartProducts.flatMap((product) => product.ingredients)),
-  ];
+// Kosinüs benzerliği hesaplama
+const calculateCosineSimilarity = (vector1, vector2) => {
+  const dotProduct = vector1.reduce((sum, val, i) => sum + val * vector2[i], 0);
+  const magnitude1 = Math.sqrt(vector1.reduce((sum, val) => sum + val * val, 0));
+  const magnitude2 = Math.sqrt(vector2.reduce((sum, val) => sum + val * val, 0));
+  
+  if (magnitude1 === 0 || magnitude2 === 0) return 0;
+  return dotProduct / (magnitude1 * magnitude2);
+};
 
-  // Eğer sepette malzeme yoksa öneri döndürme
-  if (cartIngredients.length === 0) {
+export const getRecommendations = async (cartProducts, allProducts) => {
+  try {
+    // Tüm benzersiz malzemeleri topla
+    const allIngredients = [...new Set(
+      allProducts.flatMap(product => product.ingredients)
+    )];
+
+    // Sepetteki ürünlerin kategorilerini topla
+    const cartCategories = [...new Set(
+      cartProducts.map(product => product.category)
+    )];
+
+    // Sepetteki ürünlerin malzemelerini birleştir
+    const cartIngredients = [...new Set(
+      cartProducts.flatMap(product => product.ingredients)
+    )];
+
+    if (cartIngredients.length === 0) return [];
+
+    // Her kategori için ayrı öneriler oluştur
+    const recommendationsByCategory = {};
+    cartCategories.forEach(category => {
+      // Kategori bazlı sepet ürünleri
+      const categoryCartProducts = cartProducts.filter(p => p.category === category);
+      const categoryCartIngredients = [...new Set(
+        categoryCartProducts.flatMap(p => p.ingredients)
+      )];
+      const categoryVector = createFeatureVector(categoryCartIngredients, allIngredients);
+
+      // Aynı kategorideki diğer ürünleri değerlendir
+      const categorySimilarities = allProducts
+        .filter(product => 
+          product.category === category &&
+          !cartProducts.some(cp => cp._id === product._id) &&
+          product.ingredients.length > 0
+        )
+        .map(product => {
+          const productVector = createFeatureVector(product.ingredients, allIngredients);
+          const similarity = calculateCosineSimilarity(categoryVector, productVector);
+          
+          // Malzeme sayısı ağırlığı
+          const ingredientCountWeight = Math.min(product.ingredients.length / 2, 1.2);
+          
+          return {
+            ...product,
+            similarity: similarity * ingredientCountWeight
+          };
+        })
+        .filter(product => product.similarity > 0.1) // Minimum benzerlik eşiği
+        .sort((a, b) => b.similarity - a.similarity);
+
+      recommendationsByCategory[category] = categorySimilarities;
+    });
+
+    // Farklı kategorilerden önerileri birleştir
+    let finalRecommendations = [];
+    let categoryIndex = 0;
+    const maxIterations = Math.max(
+      ...Object.values(recommendationsByCategory)
+        .map(recommendations => recommendations.length)
+    );
+
+    // Kategorilerden sırayla ürün al
+    for (let i = 0; i < maxIterations; i++) {
+      const categories = Object.keys(recommendationsByCategory);
+      if (categories.length === 0) break;
+
+      const currentCategory = categories[categoryIndex % categories.length];
+      const categoryRecommendations = recommendationsByCategory[currentCategory];
+
+      if (categoryRecommendations[i]) {
+        finalRecommendations.push(categoryRecommendations[i]);
+      }
+
+      categoryIndex++;
+    }
+
+    return finalRecommendations;
+  } catch (error) {
+    console.error("Öneri hesaplama hatası:", error);
     return [];
   }
+};
 
-  // Sepette olmayan ürünleri filtrele
-  const availableProducts = allProducts.filter(
-    (product) =>
-      !cartProducts.some((cartProduct) => cartProduct._id === product._id) &&
-      product.ingredients.length > 0
+// Kategori bazlı filtreleme için yardımcı fonksiyon
+export const filterByCategory = (recommendations, category) => {
+  return recommendations.filter(product => product.category === category);
+};
+
+// Fiyat bazlı filtreleme için yardımcı fonksiyon
+export const filterByPriceRange = (recommendations, minPrice, maxPrice) => {
+  return recommendations.filter(product => 
+    product.prices[0] >= minPrice && product.prices[0] <= maxPrice
   );
-
-  // Her ürün için benzerlik skorunu hesapla
-  const productsWithScores = availableProducts.map((product) => {
-    const similarityScore = calculateJaccardSimilarity(
-      cartIngredients,
-      product.ingredients
-    );
-    return {
-      ...product,
-      similarityScore,
-    };
-  });
-
-  // Benzerlik skoruna göre sıralama (yüksekten düşüğe)
-  const sortedProducts = productsWithScores
-    .filter((product) => product.similarityScore > threshold) // Eşik değer üzerinde olanlar
-    .sort((a, b) => b.similarityScore - a.similarityScore);   // Skora göre sıralama
-
-  // Sıralanmış tüm ürünleri döndür
-  return sortedProducts;
 };
-
-/* ------------------------------------------------------------------------ */
-/* 
-// Jaccard benzerlik katsayısını hesaplayan fonksiyon
-const calculateJaccardSimilarity = (ingredients1, ingredients2) => {
-  const set1 = new Set(ingredients1);
-  const set2 = new Set(ingredients2);
-
-  const intersection = new Set([...set1].filter((x) => set2.has(x)));
-  const union = new Set([...set1, ...set2]);
-
-  return intersection.size / union.size;
-};
-
-// KNN algoritması ile ürün önerisi yapan fonksiyon
-export const getRecommendations = (
-  cartProducts, // Sepetteki ürünler
-  allProducts,  // Tüm ürünler
-  k = 5,        // Komşu sayısı (K)
-  threshold = 0.1 // Minimum benzerlik skoru
-) => {
-  // Sepetteki tüm ürünlerin malzemelerini birleştir
-  const cartIngredients = [
-    ...new Set(cartProducts.flatMap((product) => product.ingredients)),
-  ];
-
-  // Eğer sepette malzeme yoksa öneri döndürme
-  if (cartIngredients.length === 0) {
-    return [];
-  }
-
-  // Sepette olmayan ürünleri filtrele
-  const availableProducts = allProducts.filter(
-    (product) =>
-      !cartProducts.some((cartProduct) => cartProduct._id === product._id) &&
-      product.ingredients.length > 0
-  );
-
-  // Her ürün için benzerlik skorunu hesapla
-  const productsWithScores = availableProducts.map((product) => {
-    const similarityScore = calculateJaccardSimilarity(
-      cartIngredients,
-      product.ingredients
-    );
-    return {
-      ...product,
-      similarityScore,
-    };
-  });
-
-  // Benzerlik skoruna göre sıralama (yüksekten düşüğe)
-  const sortedProducts = productsWithScores
-    .filter((product) => product.similarityScore > threshold)
-    .sort((a, b) => b.similarityScore - a.similarityScore);
-
-  // En yüksek skora sahip ilk K ürünü döndür
-  return sortedProducts.slice(0, k-3);
-};
- */
-/* ----------------------------------------------------------------- */
-
-/* // Jaccard benzerlik katsayısını hesaplayan fonksiyon
-const calculateJaccardSimilarity = (ingredients1, ingredients2) => {
-  const set1 = new Set(ingredients1);
-  const set2 = new Set(ingredients2);
-
-  const intersection = new Set([...set1].filter((x) => set2.has(x)));
-  const union = new Set([...set1, ...set2]);
-
-  return intersection.size / union.size;
-};
-
-// KNN algoritması ile ürün önerisi yapan fonksiyon
-export const getRecommendations = (
-  cartProducts,
-  allProducts,
-  threshold = 0.1
-) => {
-  // Sepetteki tüm ürünlerin malzemelerini birleştir
-  const cartIngredients = [
-    ...new Set(cartProducts.flatMap((product) => product.ingredients)),
-  ];
-  if (cartIngredients.length === 0) {
-    return [];
-  }
-
-  // Sepette olmayan ürünleri filtrele
-  const availableProducts = allProducts.filter(
-    (product) =>
-      !cartProducts.some((cartProduct) => cartProduct._id === product._id) &&
-      product.ingredients.length > 0
-  );
-
-  // Her ürün için benzerlik skorunu hesapla
-  const productsWithScores = availableProducts.map((product) => {
-    const similarityScore = calculateJaccardSimilarity(
-      cartIngredients,
-      product.ingredients
-    );
-    return {
-      ...product,
-      similarityScore,
-    };
-  });
-
-  // Benzerlik skoruna göre filtrele
-  const filteredProducts = productsWithScores.filter(product => product.similarityScore > threshold);
-
-  // Tüm önerileri döndür
-  return filteredProducts; // K parametresi kaldırıldı, tüm öneriler döndürülüyor
-};
- */
-
 

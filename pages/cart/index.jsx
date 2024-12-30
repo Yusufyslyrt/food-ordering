@@ -59,7 +59,7 @@ const Cart = ({ userList }) => {
 
         // Öneri hesapla
         if (cart.products.length > 0) {
-          const recommendedProducts = getRecommendations(
+          const recommendedProducts = await getRecommendations(
             cart.products,
             allProducts
           );
@@ -150,18 +150,23 @@ const Cart = ({ userList }) => {
                 {recommendations.map((product) => (
                   <div
                     key={product._id}
-                    className="bg-secondary p-4 rounded-lg text-white flex-shrink-0 w-60"
+                    className="bg-secondary p-4 rounded-lg text-white flex-shrink-0 w-80 flex flex-col justify-between items-start"
                   >
                     <div>
                       <Image
                         src={product.img}
                         alt={product.title}
-                        width={100}
+                        width={110}
                         height={100}
-                        className="w-full h-40 object-cover rounded-lg"
+                        className="w-full h-40 object-fill rounded-lg"
                       />
                       <h3 className="text-xl mt-2">{product.title}</h3>
-                      <p className="text-sm opacity-70 mt-1">{product.desc}</p>
+                      <p className="text-sm opacity-70 mt-1">
+                        {product.desc}
+                        {/* {product.desc.length > 50
+                          ? `${product.desc.substring(0, 50)}...`
+                          : product.desc} */}
+                      </p>
                       <p className="mt-2">Fiyat: {product.prices[0]} TL</p>
                     </div>
                     <button
